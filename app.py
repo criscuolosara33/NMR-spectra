@@ -55,7 +55,6 @@ class SpinSystemEngine:
         self.temperature = temperature
         self.nuclei = {}
         self.couplings = []
-        self.debug_log = []
         self._build_engine()
 
     def _stima_shift_base(self, atom):
@@ -241,7 +240,7 @@ class SpinSystemEngine:
 def genera_spettro_sperimentale(peaks_df, x_ppm, freq=400.0):
     """Genera lo spettro dai dati inseriti usando la lorentziana originale dell'app."""
     y = np.zeros_like(x_ppm)
-    gamma = 0.0025 * (500.0 / freq)
+    gamma = 0.004 * (500.0 / freq) # Valore aumentato per migliore visibilità
     
     for _, row in peaks_df.iterrows():
         shift = row["Shift (ppm)"]
@@ -263,7 +262,6 @@ def genera_spettro_sperimentale(peaks_df, x_ppm, freq=400.0):
         gamma_app = max(0.06, gamma) if mult == 'br s' else gamma
         
         for off, rat in zip(offsets, ratios):
-            # Stessa formula di rendering del tuo codice principale per coerenza visiva
             y += (integ * rat) / (1.0 + ((x_ppm - (shift + off)) / gamma_app)**2)
     return y
 
@@ -278,7 +276,7 @@ def genera_spettro_predetto_oop(smiles, x_ppm, freq=400.0, temp=25):
     try:
         engine = SpinSystemEngine(mol_h, freq, temp)
         signals = engine.get_signals_for_ui()
-        gamma = 0.0025 * (500.0 / freq)
+        gamma = 0.004 * (500.0 / freq) # Valore allineato a quello sperimentale
         
         for sig in signals:
             gamma_app = max(0.06, gamma) if sig.get('is_exchangeable', False) else gamma
@@ -355,52 +353,50 @@ with col_fragments:
             st.info("Aggiungi picchi per ottenere suggerimenti strutturali.")
 
 st.markdown("---")
-st.markdown("### 3. Validazione Strutturale (Experimental vs Predicted)")
+st.markdown("### 3. Validazione Strutturale")
+st.markdown("**Disegna la tua ipotesi strutturale:**")
 
-col_draw, col_plot = st.columns([0.5, 0.5])
+# Ketcher a larghezza intera per forzare la comparsa della barra degli strumenti
+smiles_ipotesi = st_ketcher("CCO", height=500) 
 
-with col_draw:
-    st.markdown("**Disegna la tua ipotesi strutturale:**")
-    smiles_ipotesi = st_ketcher("CCO", height=500) 
+st.markdown("### Confronto Spettri (Experimental vs Predicted)")
     
-with col_plot:
-    x_ppm = np.linspace(-0.5, 12.5, 2000)
-    
-    # 1. Calcolo Spettro Sperimentale (dalla tabella)
-    y_exp = genera_spettro_sperimentale(edited_df, x_ppm, freq=400.0)
-    
-    # 2. Calcolo Spettro Predetto (motore ad oggetti)
-    y_pred = genera_spettro_predetto_oop(smiles_ipotesi, x_ppm, freq=400.0, temp=25)
-    
-    fig = go.Figure()
-    
-    # Traccia Sperimentale
+# Aumentata la risoluzione a 10000 punti per visualizzare lo splitting
+x_ppm = np.linspace(-0.5, 12.5, 10000)
+
+# Calcolo spettri
+y_exp = genera_spettro_sperimentale(edited_df, x_ppm, freq=400.0)
+y_pred = genera_spettro_predetto_oop(smiles_ipotesi, x_ppm, freq=400.0, temp=25)
+
+fig = go.Figure()
+
+# Traccia Sperimentale
+fig.add_trace(go.Scatter(
+    x=x_ppm, y=y_exp, 
+    mode='lines', name='Sperimentale (Tabella)',
+    line=dict(color='black', width=1.5),
+    fill='tozeroy', fillcolor='rgba(0,0,0,0.1)'
+))
+
+# Traccia Predetta
+if smiles_ipotesi:
     fig.add_trace(go.Scatter(
-        x=x_ppm, y=y_exp, 
-        mode='lines', name='Sperimentale (Tabella)',
-        line=dict(color='black', width=2),
-        fill='tozeroy', fillcolor='rgba(0,0,0,0.1)'
+        x=x_ppm, y=y_pred, 
+        mode='lines', name='Predetto (Motore OOP)',
+        line=dict(color=BORDEAUX, width=1.5, dash='dash'),
+        fill='tozeroy', fillcolor='rgba(107, 20, 34, 0.2)'
     ))
     
-    # Traccia Predetta (Ketcher)
-    if smiles_ipotesi:
-        fig.add_trace(go.Scatter(
-            x=x_ppm, y=y_pred, 
-            mode='lines', name='Predetto (Motore OOP)',
-            line=dict(color=BORDEAUX, width=2, dash='dash'),
-            fill='tozeroy', fillcolor='rgba(107, 20, 34, 0.2)'
-        ))
-        
-    fig.update_layout(
-        xaxis_title="Chemical Shift δ (ppm)",
-        yaxis_title="Intensità Relativa",
-        xaxis=dict(autorange="reversed"),
-        plot_bgcolor='white',
-        hovermode='x',
-        margin=dict(l=20, r=20, t=30, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#E0E0E0', range=[12.5, -0.5])
-    fig.update_yaxes(showgrid=False, showticklabels=False)
-    
-    st.plotly_chart(fig, use_container_width=True)
+fig.update_layout(
+    xaxis_title="Chemical Shift δ (ppm)",
+    yaxis_title="Intensità Relativa",
+    xaxis=dict(autorange="reversed"),
+    plot_bgcolor='white',
+    hovermode='x',
+    margin=dict(l=20, r=20, t=30, b=20),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+)
+fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#E0E0E0', range=[12.5, -0.5])
+fig.update_yaxes(showgrid=False, showticklabels=False)
+
+st.plotly_chart(fig, use_container_width=True)
